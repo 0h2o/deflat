@@ -1,4 +1,4 @@
-from barf.barf import BARF
+from barf import BARF
 import angr
 import simuvex
 import pyvex
@@ -29,9 +29,11 @@ def get_relevant_nop_blocks(cfg):
 def statement_inspect(state):
     global modify_value
     expressions = state.scratch.irsb.statements[state.inspect.statement].expressions
-    if len(expressions) != 0 and isinstance(expressions[0], pyvex.expr.ITE):
-        state.scratch.temps[expressions[0].cond.tmp] = modify_value
-        state.inspect._breakpoints['statement'] = []
+    for each in expressions:
+        if isinstance(each, pyvex.expr.ITE):
+            state.scratch.temps[each.cond.tmp] = modify_value
+            state.inspect._breakpoints['statement'] = []
+        break
 
 def symbolic_execution(start_addr, hook_addr=None, modify=None, inspect=False):
     global b, relevants, modify_value
@@ -106,10 +108,10 @@ if __name__ == '__main__':
         has_branches = False
         hook_addr = None
         for ins in block.instrs:
-            if ins.mnemonic.startswith('cmov'):
+            if ins.asm_instr.mnemonic.startswith('cmov'):
                 patch_instrs[relevant] = ins
                 has_branches = True
-            elif ins.mnemonic.startswith('call'):
+            elif ins.asm_instr.mnemonic.startswith('call'):
                 hook_addr = ins.address
         if has_branches:
             flow[relevant].append(symbolic_execution(relevant, hook_addr, claripy.BVV(1, 1), True))
@@ -135,14 +137,14 @@ if __name__ == '__main__':
             file_offset = last_instr.address - base_addr
             origin_data[file_offset] = opcode['jmp']
             file_offset += 1
-            fill_nop(origin_data, file_offset, file_offset + last_instr.size - 1)
+            fill_nop(origin_data, file_offset, file_offset + last_instr.asm_instr.size - 1)
             fill_jmp_offset(origin_data, file_offset, childs[0] - last_instr.address - 5)
         else:
             instr = patch_instrs[parent]
             file_offset = instr.address - base_addr
             fill_nop(origin_data, file_offset, cfg.find_basic_block(parent).end_address - base_addr + 1)
             origin_data[file_offset] = opcode['j']
-            origin_data[file_offset + 1] = opcode[instr.mnemonic[4:]]
+            origin_data[file_offset + 1] = opcode[instr.asm_instr.mnemonic[4:]]
             fill_jmp_offset(origin_data, file_offset + 2, childs[0] - instr.address - 6)
             file_offset += 6
             origin_data[file_offset] = opcode['jmp']
